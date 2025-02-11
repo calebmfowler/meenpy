@@ -11,7 +11,9 @@ class FBD:
         self.reactionSet = reactionForceSet
     def __str__(self):
         str = "Applied Forces\n"
-        str << [force.__str__() for force in self.forceSet]
-        str = "Reaction Force Basis\n"
-        str << [reaction.__str__() for reaction in self.reactionSet]
-        return str
+        for force in self.forceSet:
+            str += force.__str__() + "\n"
+        str += "Reaction Force Basis\n"
+        for reaction in self.reactionSet:
+            str += reaction.__str__() + "\n"
+        return str[:-1]
