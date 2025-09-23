@@ -82,7 +82,7 @@ class MEENPyTest(unittest.TestCase):
         pass
 
     def test_two_index_table(self):
-        water_table = teqn(read_csv("testing/water.csv"), ["Temperature", "Quality"])
+        water_table = teqn(read_csv("test/water.csv"), ["Temperature", "Quality"])
         water_table.get_subbed({"Pressure": 1, "Specific Volume": 1.75})
         water_table.get_subbed({"Temperature": 125})
         func, arg_labels = water_table.get_lambda_residual({"Pressure": 1})
@@ -93,7 +93,7 @@ class MEENPyTest(unittest.TestCase):
     def test_tabular_system(self):
         T, x, p, v = symb("T, x, p, v")
         column_map = {T: "Temperature", x: "Quality", p: "Pressure", v: "Specific Volume"}
-        water = teqn(read_csv("testing/water.csv"), ["Temperature", "Quality"], residual_type="all_column_differential")
+        water = teqn(read_csv("test/water.csv"), ["Temperature", "Quality"], residual_type="all_column_differential")
         
         T_amb, h, Qd = symb("T_amb, h, Qd")
         convection = seqn(Qd, h * (T - T_amb))
