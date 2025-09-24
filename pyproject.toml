@@ -1,13 +1,14 @@
 [project]
 name = "meenpy"
-version = "0.1.1"
-description = "Add your description here"
+version = "0.1.2"
+description = "meenpy is a library of utilities for mechanical engineering problem solving."
 readme = "README.md"
 authors = [
     { name = "Caleb Fowler", email = "caleb.fowler.atx@gmail.com" }
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "matplotlib>=3.10.6",
     "numpy>=2.3.3",
     "pandas>=2.3.2",
     "scipy>=1.16.2",

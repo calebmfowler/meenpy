@@ -1,7 +1,8 @@
 from scipy.optimize import fsolve
 from sympy import sympify, lambdify, Basic, Expr, Matrix, Identity
-from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum, argmin, shape, vectorize, ones
-from typing import Callable, get_type_hints
+from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum, argmin, shape, vectorize, abs, max, reciprocal
+from numpy.linalg import norm
+from typing import Callable, get_type_hints, cast
 from pandas import Series, DataFrame, concat
 
 usernum = int | float | npfloat
@@ -109,13 +110,13 @@ class ScalarEquation(AlgebraicEquation):
 
         return unpack_wrapper(lambda_residual), residual_variables
         
-    def solve(self, subs: dict[Basic, usernum] = {}, guess: usernum = 1) -> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum] = {}, guess: usernum = 1, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn = None) -> dict[Basic, npfloat]:
         lambda_residual, residual_variables = self.get_lambda_residual(subs)
 
-        exception_output = f"""
-                ScalarEquation:\n    {self.__str__().replace('\n', '\n    ')}\n
-                subs:\n    {subs.__str__().replace('\n', '\n    ')}\n
-                residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"""
+        exception_output = f"\
+                ScalarEquation:\n    {self.__str__().replace('\n', '\n    ')}\n\
+                subs:\n    {subs.__str__().replace('\n', '\n    ')}\n\
+                residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"
 
         if len(residual_variables) == 0:
             raise ValueError(f"Subs provided for solving reduced scalar equation satisfied all variables\n{exception_output}")
@@ -124,7 +125,16 @@ class ScalarEquation(AlgebraicEquation):
             raise ValueError(f"Insufficient subs to solve scalar equation\n{exception_output}")
         
         try:
-            solution = fsolve(lambda_residual, guess)
+            solution, infodict, ier, msg = fsolve(lambda_residual, guess, full_output=True, maxfev=maxfev, xtol=xtol, epsfcn=epsfcn)
+
+            if verbosity > 0:
+                print("fsolve results:")
+                print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
+                print("    " + msg)
+
+            if verbosity > 1:
+                print(infodict)
+                print(ier)
         
         except Exception as e:
             raise Exception(f"Unable to solve ScalarEquation\n{exception_output}\n{e}")
@@ -143,11 +153,11 @@ class MatrixEquation(AlgebraicEquation):
         lhs_rows, lhs_cols = lhs_shape
         rhs_rows, rhs_cols = rhs_shape
 
-        exception_output = f"""
-                lhs:\n    {str(self.lhs.__str__()).replace('\n', '\n    ')}\n
-                rhs:\n    {str(self.rhs.__str__()).replace('\n', '\n    ')}\n
-                lhs.shape: {self.lhs.shape}\n
-                rhs.shape: {self.rhs.shape}"""
+        exception_output = f"\
+                lhs:\n    {str(self.lhs.__str__()).replace('\n', '\n    ')}\n\
+                rhs:\n    {str(self.rhs.__str__()).replace('\n', '\n    ')}\n\
+                lhs.shape: {self.lhs.shape}\n\
+                rhs.shape: {self.rhs.shape}"
 
         if lhs_rows == 0 or lhs_cols == 0 or rhs_rows == 0 or rhs_cols == 0:
             raise ValueError(f"Given expression shapes include a zero width dimension\n{exception_output}")
@@ -202,13 +212,13 @@ class MatrixEquation(AlgebraicEquation):
 
         return unpack_ravel_wrapper(shaped_lambda_residual), residual_variables
 
-    def solve(self, subs: dict[Basic, usernum] = {}, guess_dict: dict[Basic, usernum] = {}) -> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum] = {}, guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn = None) -> dict[Basic, npfloat]:
         lambda_residual, residual_variables = self.get_lambda_residual(subs)
 
-        exception_output = f"""
-                MatrixEquation:\n    {self.__str__().replace('\n', '\n    ')}\n
-                subs:\n    {subs.__str__().replace('\n', '\n    ')}\n
-                residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"""
+        exception_output = f"\
+                MatrixEquation:\n    {self.__str__().replace('\n', '\n    ')}\n\
+                subs:\n    {subs.__str__().replace('\n', '\n    ')}\n\
+                residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"
 
         if len(residual_variables) > self.size:
             raise ValueError(f"Insufficient subs to solve matrix equation\n{exception_output}")
@@ -216,10 +226,19 @@ class MatrixEquation(AlgebraicEquation):
         guess_vect = [guess_dict.get(variable) if variable in guess_dict.keys() else 1 for variable in residual_variables]
         
         try:
-            solution = nparr(fsolve(lambda_residual, guess_vect), dtype=npfloat)
+            solution, infodict, ier, msg = fsolve(lambda_residual, guess_vect, full_output=True, maxfev=maxfev, xtol=xtol, epsfcn=epsfcn)
 
+            if verbosity > 0:
+                print("fsolve results:")
+                print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
+                print("    " + msg)
+
+            if verbosity > 1:
+                print(infodict)
+                print(ier)
+        
         except Exception as e:
-            raise Exception(f"{e}\nUnable to solve MatrixEquation\n{exception_output}")
+            raise Exception(f"Unable to solve MatrixEquation\n{exception_output}\n{e}")
 
         return dict(zip(residual_variables, solution))
 
@@ -260,6 +279,9 @@ class TabularEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
 
         self.residual_type = residual_type
+        self.residual_scaling: ndarray = reciprocal(max(abs(nparr(
+            [vectorize(lambda I: I[i])(self.index.values) for i in range(self.index.nlevels)] + [series.values for col, series in self.df.items()]
+        )), axis=1))
 
     def _how_is_index_adjacent(self, I: tuple, J: tuple) -> tuple[int, bool]:
         index_inequality = [1 if i != j else 0 for i, j in zip(I, J)]
@@ -320,13 +342,13 @@ class TabularEquation(Equation):
 
     def _get_interpolated_row(self, adj_index: int, A: tuple, B: tuple, col: str, val: usernum, is_proper_column: bool) -> Series:
         if is_proper_column:
-            val_A, val_B = self.at[A, col], self.at[B, col]
+            val_A, val_B = cast(float, self.at[A, col]), cast(float, self.at[B, col])
         else:
-            val_A, val_B = A[adj_index], B[adj_index]
+            val_A, val_B = cast(float, A[adj_index]), cast(float, B[adj_index])
 
-        row_A, row_B = self.loc[A], self.loc[B]
+        row_A, row_B = cast(Series, self.loc[A]), cast(Series, self.loc[B])
         x = (val - val_A) / (val_B - val_A)
-
+        
         N = A[:adj_index] + (A[adj_index] * (1 - x) + B[adj_index] * (x),) + A[adj_index + 1:]
         row_N: Series = row_A * (1 - x) + row_B * (x)
         row_N.name = N
@@ -342,9 +364,11 @@ class TabularEquation(Equation):
 
             if N in subbed_table.index:
                 if subbed_table.residual_type == "proper_column_differential":
-                    return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values])
+                    # print(f"@ {N} {col_vals_N}\nwhere {subbed_table.loc[N].values} may be evaluated\nso {concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values]) * subbed_table.residual_scaling} is the residual\nscaled by {subbed_table.residual_scaling}")
+                    return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values]) * subbed_table.residual_scaling
                 elif subbed_table.residual_type == "all_column_differential":
-                    return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values])
+                    # print(f"@ {N} {col_vals_N}\nwhere {subbed_table.loc[N].values} may be evaluated\nso {concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values]) * subbed_table.residual_scaling} is the residual\nscaled by {subbed_table.residual_scaling}")
+                    return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values]) * subbed_table.residual_scaling
             
             novel_index_adjacency = [subbed_table._how_is_index_adjacent(I, N) for I in subbed_table.index]
 
@@ -374,9 +398,11 @@ class TabularEquation(Equation):
 
             if len(interpolated_col_vals) != 0:
                 if subbed_table.residual_type == "proper_column_differential":
-                    return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]])
+                    # print(f"@ {N} {col_vals_N}\nwhere {interpolated_col_vals[0]} may be interpolated\nso {concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]]) * subbed_table.residual_scaling} is the residual\nscaled by {subbed_table.residual_scaling}")
+                    return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]]) * subbed_table.residual_scaling
                 elif subbed_table.residual_type == "all_column_differential":
-                    return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]])
+                    # print(f"@ {N} {col_vals_N}\nwhere {interpolated_col_vals[0]} may be interpolated\nso {concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]]) * subbed_table.residual_scaling} is the residual\nscaled by {subbed_table.residual_scaling}")
+                    return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]]) * subbed_table.residual_scaling
 
             index_seperation = [subbed_table._get_index_seperation(N, I) for I in subbed_table.index]
             i_nearest_index = argmin(index_seperation)
@@ -388,14 +414,15 @@ class TabularEquation(Equation):
             if subbed_table.residual_type == "proper_column_differential":
                 pass
             elif subbed_table.residual_type == "all_column_differential":
-                unscaled_residual[:subbed_table.index.nlevels] = nparr(N) - nparr(nearest_index)
+                unscaled_residual[0:subbed_table.index.nlevels] = (nparr(N) - nparr(nearest_index)) * subbed_table.residual_scaling[0:subbed_table.index.nlevels]
 
+            # print(f"@ {N} {col_vals_N}\nwhere the residual {nearest_index_residual} is obtained @ {nearest_index}\nso {unscaled_residual + vectorize(lambda x: -1 if x < 0 else 1)(unscaled_residual) * nearest_index_seperation} is the residual")
             return unscaled_residual + vectorize(lambda x: -1 if x < 0 else 1)(unscaled_residual) * nearest_index_seperation
 
         return lambda_residual, [str(name) for name in subbed_table.index.names] + subbed_table.columns.to_list()
 
     def _get_index_seperation(self, N: tuple, I: tuple) -> npfloat:
-        return sum([abs(n - i) for n, i in zip(N, I)])
+        return npfloat(norm((nparr(N) - nparr(I)) * self.residual_scaling[0:self.index.nlevels]))
 
     def _get_interpolated_col_vals(self, adj_index: int, A: tuple, N: tuple, B: tuple) -> ndarray:
         adj_index_val_A, adj_index_val_N, adj_index_val_B = A[adj_index], N[adj_index], B[adj_index]
@@ -403,6 +430,35 @@ class TabularEquation(Equation):
         col_vals_A, col_vals_B = self.loc[A].values, self.loc[B].values
 
         return col_vals_A * (1 - x) + col_vals_B * (x)
+    
+    def solve(self, subs: dict[str, usernum] = {}, guess_dict: dict[str, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn = None) -> dict[str, npfloat]:
+        lambda_residual, residual_variables = self.get_lambda_residual(subs)
+
+        exception_output = f"\
+                TabularEquation:\n    {self.__str__().replace('\n', '\n    ')}\n\
+                subs:\n    {subs.__str__().replace('\n', '\n    ')}\n\
+                residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"
+        
+        if len(residual_variables) > self.size:
+            raise ValueError(f"Insufficient subs to solve matrix equation\n{exception_output}")
+        
+        try:
+            guess_vect = nparr([guess_dict[variable] if variable in guess_dict.keys() else 1 for variable in residual_variables])
+            solution, infodict, ier, msg = fsolve(lambda_residual, guess_vect, full_output=True, maxfev=maxfev, xtol=xtol, epsfcn=epsfcn)
+
+            if verbosity > 0:
+                print("fsolve results:")
+                print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
+                print("    " + msg)
+
+            if verbosity > 1:
+                print(infodict)
+                print(ier)
+        
+        except Exception as e:
+            raise Exception(f"Unable to solve TabularEquation\n{exception_output}\n{e}")
+
+        return dict(zip(residual_variables, nparr(solution, dtype=npfloat)))  
 
     def __getitem__(self, *args, **kwargs):
         return self.df.__getitem__(*args, **kwargs)
@@ -459,29 +515,34 @@ class System:
 
         return concatenate_wrapper(func_list), arg_list, return_len
 
-    def solve(self, subs: dict[Basic, usernum], guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1)-> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum], guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn = None)-> dict[Basic, npfloat]:
         lambda_residual, residual_variables, return_len = self.get_lambda_residual(subs)
     
-        exception_output = f"""
-                System:\n    {self.__str__().replace('\n', '    ')}\n
-                subs:\n    {subs.__str__().replace('\n', '    ')}\n
-                residual_variables:\n    {residual_variables.__str__().replace('\n', '    ')}"""
+        exception_output = f"\
+                System:\n    {self.__str__().replace('\n', '\n    ')}\n\
+                subs:\n    {subs.__str__().replace('\n', '\n    ')}\n\
+                residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"
 
         if len(residual_variables) > self.size:
             raise ValueError(f"Insufficient subs to solve matrix equation\n{exception_output}")
         
         guess_list = [guess_dict[variable] if variable in guess_dict.keys() else 1 for variable in residual_variables]
         guess_vect = nparr(guess_list + [1] * (return_len - len(guess_list)))
-        solution, infodict, ier, msg = fsolve(lambda_residual, guess_vect, full_output=True)
 
-        if verbosity > 0:
-            print("fsolve results:")
-            print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
-            print("    " + msg)
+        try:
+            solution, infodict, ier, msg = fsolve(lambda_residual, guess_vect, full_output=True, maxfev=maxfev, xtol=xtol, epsfcn=epsfcn)
 
-        if verbosity > 1:
-            print(infodict)
-            print(ier)
+            if verbosity > 0:
+                print("fsolve results:")
+                print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
+                print("    " + msg)
+
+            if verbosity > 1:
+                print(infodict)
+                print(ier)
+        
+        except Exception as e:
+            raise Exception(f"Unable to solve System\n{exception_output}\n{e}")
 
         return dict(zip(residual_variables, nparr(solution, dtype=npfloat)))        
 
