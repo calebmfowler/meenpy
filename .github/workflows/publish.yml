@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main  # publish on every commit to main
+  workflow_dispatch:  # allow manual runs from GitHub UI
 
 permissions:
   id-token: write   # required for PyPI Trusted Publisher
