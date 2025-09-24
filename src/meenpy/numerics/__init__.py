@@ -8,6 +8,9 @@ from pandas import Series, DataFrame, concat
 usernum = int | float | npfloat
 
 class Equation:
+    """Equation provides the structure for user facing equation classes and should not be used directly
+    """
+
     def __init__(self):
         self._init_size()
 
@@ -25,6 +28,12 @@ class Equation:
 
 
 class AlgebraicEquation(Equation):
+    """AlgebraicEquation  provides the structure for user facing algebraic equation classes and should not be used directly
+
+    Args:
+        Equation (class): AlgebricEquation inherits from this
+    """
+
     def __init__(self, lhs, rhs, residual_type = "differential") -> None:
         self._init_expression(lhs, rhs)
         self._init_shape()
@@ -62,6 +71,12 @@ class AlgebraicEquation(Equation):
 
 
 class ScalarEquation(AlgebraicEquation):
+    """ScalarEquation enables articulation and solution of scalar valued equations
+
+    Args:
+        AlgebraicEquation (class): ScalarEquation inherits from this
+    """
+
     def _init_expression(self, lhs, rhs) -> None:
         self.lhs: Expr = sympify(lhs)
         self.rhs: Expr = sympify(rhs)
@@ -82,9 +97,30 @@ class ScalarEquation(AlgebraicEquation):
         self.residual_type = residual_type
     
     def get_subbed(self, subs: dict[Basic, usernum]) -> "ScalarEquation":
+        """get_subbed returns a copy of self with substitutions applied
+
+        Args:
+            subs (dict[Basic, usernum]): subsitution dictionary
+
+        Returns:
+            ScalarEquation: copy of self with substitutions applied
+        """
+
         return ScalarEquation(self.lhs.subs(subs), self.rhs.subs(subs))
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Expr:
+        """get_residual returns a residual derived from self with subtitutions applied
+
+        Args:
+            subs (dict[Basic, usernum], optional): subsitution dictionary. Defaults to {}.
+
+        Raises:
+            ValueError: raised on invalid residual type
+
+        Returns:
+            Expr: residual derived from self with subtitutions applied
+        """
+
         subbed_eqn = self.get_subbed(subs)
 
         if self.residual_type == "differential":
@@ -100,6 +136,15 @@ class ScalarEquation(AlgebraicEquation):
             raise ValueError(f"Invalid residual_type = '{self.residual_type}'")
     
     def get_lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable[[ndarray], usernum], list[Basic]]:
+        """get_lambda_residual returns a residual function and list of function arguments after apply a substitution
+
+        Args:
+            subs (dict[Basic, usernum], optional): substitution dictionary. Defaults to {}.
+
+        Returns:
+            tuple[Callable[[ndarray], usernum], list[Basic]]: residual function and its arguments
+        """
+
         residual = self.get_residual(subs)
         residual_variables = list(residual.free_symbols)
         residual_variables.sort(key = lambda x: str(x))
@@ -110,7 +155,26 @@ class ScalarEquation(AlgebraicEquation):
 
         return unpack_wrapper(lambda_residual), residual_variables
         
-    def solve(self, subs: dict[Basic, usernum] = {}, guess: usernum = 1, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn = None) -> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum] = {}, guess: usernum = 1, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn: usernum | None = None) -> dict[Basic, npfloat]:
+        """solve returns one solution after applying a substitution, utilizing a guess, and passing optional arguments to scipy's fsolve
+
+        Args:
+            subs (dict[Basic, usernum], optional): substitution dictionary. Defaults to {}.
+            guess (usernum, optional): guess for fsolve. Defaults to 1.
+            verbosity (int, optional): amount of information regarding the solution printed to console according to `{0: 'None', 1: 'Result and message', 2: 'All'}`. Defaults to 1.
+            maxfev (int, optional): The maximum number of calls to the function. If zero, then `100*(N+1)` is the maximum where `N` is the number of elements in `guess`. Defaults to 0.
+            xtol (usernum, optional): The calculation will terminate if the relative error between two consecutive iterates is at most xtol. Defaults to 1.49012e-8.
+            epsfcn (usernum | None, optional): A suitable step length for the forward-difference approximation of the Jacobian (for `fprime=None`). If epsfcn is less than the machine precision, it is assumed that the relative errors in the functions are of the order of the machine precision. Defaults to None.
+
+        Raises:
+            ValueError: Substitutions satisfy all variables
+            ValueError: Insufficient substitutions to possibly solve
+            Exception: fsolve exception
+
+        Returns:
+            dict[Basic, npfloat]: solution dictionary
+        """
+        
         lambda_residual, residual_variables = self.get_lambda_residual(subs)
 
         exception_output = f"\
@@ -119,10 +183,10 @@ class ScalarEquation(AlgebraicEquation):
                 residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"
 
         if len(residual_variables) == 0:
-            raise ValueError(f"Subs provided for solving reduced scalar equation satisfied all variables\n{exception_output}")
+            raise ValueError(f"Subs provided for solving reduced ScalarEquation satisfied all variables\n{exception_output}")
 
         if len(residual_variables) > 1:
-            raise ValueError(f"Insufficient subs to solve scalar equation\n{exception_output}")
+            raise ValueError(f"Insufficient subs to solve ScalarEquation\n{exception_output}")
         
         try:
             solution, infodict, ier, msg = fsolve(lambda_residual, guess, full_output=True, maxfev=maxfev, xtol=xtol, epsfcn=epsfcn)
@@ -143,6 +207,12 @@ class ScalarEquation(AlgebraicEquation):
 
 
 class MatrixEquation(AlgebraicEquation):
+    """MatrixEquation enables articulation and solution of matrix (including vector) valued equations
+
+    Args:
+        AlgebraicEquation (class): MatrixEquation inherits from this
+    """
+
     def _init_expression(self, lhs, rhs) -> None:
         self.lhs: Matrix = sympify(lhs)
         self.rhs: Matrix = sympify(rhs)
@@ -184,9 +254,30 @@ class MatrixEquation(AlgebraicEquation):
         self.residual_type = residual_type
 
     def get_subbed(self, subs: dict[Basic, usernum]) -> "MatrixEquation":
+        """get_subbed returns a copy of self with substitutions applied
+
+        Args:
+            subs (dict[Basic, usernum]): subsitution dictionary
+
+        Returns:
+            MatrixEquation: copy of self with substitutions applied
+        """
+
         return MatrixEquation(self.lhs.subs(subs), self.rhs.subs(subs))
 
     def get_residual(self, subs: dict[Basic, usernum] = {}) -> Matrix:
+        """get_residual returns a residual derived from self with subtitutions applied
+
+        Args:
+            subs (dict[Basic, usernum], optional): subsitution dictionary. Defaults to {}.
+
+        Raises:
+            ValueError: raised on invalid residual type
+
+        Returns:
+            Matrix: residual derived from self with subtitutions applied
+        """
+
         subbed_eqn = self.get_subbed(subs)
 
         if self.residual_type == "differential":
@@ -202,6 +293,15 @@ class MatrixEquation(AlgebraicEquation):
             raise ValueError(f"Invalid residual_type = '{self.residual_type}'")
 
     def get_lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable[[ndarray], ndarray], list[Basic]]:
+        """get_lambda_residual returns a residual function and list of function arguments after apply a substitution
+
+        Args:
+            subs (dict[Basic, usernum], optional): substitution dictionary. Defaults to {}.
+
+        Returns:
+            tuple[Callable[[ndarray], ndarray], list[Basic]]: residual function and its arguments
+        """
+
         residual = self.get_residual(subs)
         residual_variables: list[Basic] = list(residual.free_symbols)
         residual_variables.sort(key = lambda x: str(x))
@@ -212,7 +312,25 @@ class MatrixEquation(AlgebraicEquation):
 
         return unpack_ravel_wrapper(shaped_lambda_residual), residual_variables
 
-    def solve(self, subs: dict[Basic, usernum] = {}, guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn = None) -> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum] = {}, guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn: usernum | None = None) -> dict[Basic, npfloat]:
+        """solve returns one solution after applying a substitution, utilizing a guess, and passing optional arguments to scipy's fsolve
+
+        Args:
+            subs (dict[Basic, usernum], optional): substitution dictionary. Defaults to {}.
+            guess_dict (dict[Basic, usernum], optional): guess dictionary, the values of which are passed to fsolve. Defaults to {}.
+            verbosity (int, optional): amount of information regarding the solution printed to console according to `{0: 'None', 1: 'Result and message', 2: 'All'}`. Defaults to 1.
+            maxfev (int, optional): The maximum number of calls to the function. If zero, then `100*(N+1)` is the maximum where `N` is the number of elements in `guess`. Defaults to 0.
+            xtol (usernum, optional): The calculation will terminate if the relative error between two consecutive iterates is at most xtol. Defaults to 1.49012e-8.
+            epsfcn (usernum | None, optional): A suitable step length for the forward-difference approximation of the Jacobian (for `fprime=None`). If epsfcn is less than the machine precision, it is assumed that the relative errors in the functions are of the order of the machine precision. Defaults to None.
+
+        Raises:
+            ValueError: Insufficient substitutions to possibly solve
+            Exception: fsolve exception
+
+        Returns:
+            dict[Basic, npfloat]: solution dictionary
+        """
+        
         lambda_residual, residual_variables = self.get_lambda_residual(subs)
 
         exception_output = f"\
@@ -221,7 +339,7 @@ class MatrixEquation(AlgebraicEquation):
                 residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"
 
         if len(residual_variables) > self.size:
-            raise ValueError(f"Insufficient subs to solve matrix equation\n{exception_output}")
+            raise ValueError(f"Insufficient subs to solve MatrixEquation\n{exception_output}")
         
         guess_vect = [guess_dict.get(variable) if variable in guess_dict.keys() else 1 for variable in residual_variables]
         
@@ -244,6 +362,12 @@ class MatrixEquation(AlgebraicEquation):
 
 
 class TabularEquation(Equation):
+    """TabularEquation enables articulation and solution of equations defined by tables
+
+    Args:
+        Equation (class): TabularEquation inherits from this
+    """
+
     def __init__(self, df: DataFrame, indexing_columns: list[str] = [], preformatted: bool = False, residual_type: str = "proper_column_differential") -> None:
         self._init_expression(df, indexing_columns, preformatted)
         self._init_df_shorthand()
@@ -295,6 +419,15 @@ class TabularEquation(Equation):
             return (-1, False)
 
     def get_subbed(self, subs: dict[str, usernum]) -> "TabularEquation":
+        """get_subbed returns a copy of self with substitutions applied
+
+        Args:
+            subs (dict[str, usernum]): subsitution dictionary
+
+        Returns:
+            TabularEquation: copy of self with substitutions applied
+        """
+
         subbed_df = self.df
 
         for col, val in zip(subs.keys(), subs.values()):
@@ -302,7 +435,7 @@ class TabularEquation(Equation):
             is_index_column = col in subbed_df.index.names
 
             if not is_proper_column and not is_index_column:
-                raise ValueError(f"Given column {col} is not a proper column or an index column in Table\n{self.__str__()}")
+                raise ValueError(f"Given column {col} is not a proper column or an index column in TablularEquation\n{self.__str__()}")
             
             if is_proper_column:
                 equal_df = subbed_df[subbed_df[col] == val]
@@ -336,7 +469,7 @@ class TabularEquation(Equation):
             subbed_df = concat([equal_df, interpolated_df])
 
             if subbed_df.empty:
-                raise ValueError("Given subs not satisfied in Table")
+                raise ValueError("Given subs not possibly satisfied by TabularEquation")
 
         return TabularEquation(subbed_df, preformatted=True, residual_type=self.residual_type)
 
@@ -356,6 +489,15 @@ class TabularEquation(Equation):
         return row_N
 
     def get_lambda_residual(self, subs: dict[str, usernum] = {}) -> tuple[Callable[[ndarray], ndarray], list[str]]:
+        """get_lambda_residual returns a residual function and list of function arguments after apply a substitution
+
+        Args:
+            subs (dict[str, usernum], optional): substitution dictionary. Defaults to {}.
+
+        Returns:
+            tuple[Callable[[ndarray], ndarray], list[str]]: residual function and its arguments
+        """
+
         subbed_table = self.get_subbed(subs)
 
         def lambda_residual(vals: ndarray) -> ndarray:
@@ -431,7 +573,25 @@ class TabularEquation(Equation):
 
         return col_vals_A * (1 - x) + col_vals_B * (x)
     
-    def solve(self, subs: dict[str, usernum] = {}, guess_dict: dict[str, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn = None) -> dict[str, npfloat]:
+    def solve(self, subs: dict[str, usernum] = {}, guess_dict: dict[str, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn: usernum | None = None) -> dict[str, npfloat]:
+        """solve returns one solution after applying a substitution, utilizing a guess, and passing optional arguments to scipy's fsolve
+
+        Args:
+            subs (dict[str, usernum], optional): substitution dictionary. Defaults to {}.
+            guess_dict (dict[str, usernum], optional): guess dictionary, the values of which are passed to fsolve. Defaults to {}.
+            verbosity (int, optional): amount of information regarding the solution printed to console according to `{0: 'None', 1: 'Result and message', 2: 'All'}`. Defaults to 1.
+            maxfev (int, optional): The maximum number of calls to the function. If zero, then `100*(N+1)` is the maximum where `N` is the number of elements in `guess`. Defaults to 0.
+            xtol (usernum, optional): The calculation will terminate if the relative error between two consecutive iterates is at most xtol. Defaults to 1.49012e-8.
+            epsfcn (usernum | None, optional): A suitable step length for the forward-difference approximation of the Jacobian (for `fprime=None`). If epsfcn is less than the machine precision, it is assumed that the relative errors in the functions are of the order of the machine precision. Defaults to None.
+
+        Raises:
+            ValueError: Insufficient substitutions to possibly solve
+            Exception: fsolve exception
+
+        Returns:
+            dict[str, npfloat]: solution dictionary
+        """
+        
         lambda_residual, residual_variables = self.get_lambda_residual(subs)
 
         exception_output = f"\
@@ -440,7 +600,7 @@ class TabularEquation(Equation):
                 residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"
         
         if len(residual_variables) > self.size:
-            raise ValueError(f"Insufficient subs to solve matrix equation\n{exception_output}")
+            raise ValueError(f"Insufficient subs to solve TabularEquation\n{exception_output}")
         
         try:
             guess_vect = nparr([guess_dict[variable] if variable in guess_dict.keys() else 1 for variable in residual_variables])
@@ -468,6 +628,9 @@ class TabularEquation(Equation):
 
 
 class System:
+    """System enables the composition of Equation objects into a system solution of that system
+    """
+
     def __init__(self, eqn_list: list[Equation], column_map: dict[Basic, str] = {}) -> None:
         self.eqn_list = eqn_list
         self.column_map = column_map
@@ -478,6 +641,15 @@ class System:
             raise ValueError(f"TabularEquation included in system but no column_map supplied\neqn_list\n{self.eqn_list}\ncolumn_map\n{self.column_map}")
         
     def get_subbed(self, subs: dict[Basic, usernum] = {}) -> "System":
+        """get_subbed returns a copy of self with substitutions applied
+
+        Args:
+            subs (dict[Basic, usernum]): subsitution dictionary
+
+        Returns:
+            System: copy of self with substitutions applied
+        """
+
         if self.column_map != {}:
             table_subs = {self.column_map[key]: value for key, value in subs.items() if key in self.column_map.keys()}
             subbed_eqn_list = [eqn.get_subbed(table_subs) if isinstance(eqn, TabularEquation) else eqn.get_subbed(subs) for eqn in self.eqn_list]
@@ -488,6 +660,15 @@ class System:
         return System(subbed_eqn_list, self.column_map)
 
     def get_lambda_residual(self, subs: dict[Basic, usernum]) -> tuple[Callable[[ndarray], ndarray], list[Basic], int]:
+        """get_lambda_residual returns a residual function and list of function arguments after apply a substitution
+
+        Args:
+            subs (dict[Basic, usernum], optional): substitution dictionary. Defaults to {}.
+
+        Returns:
+            tuple[Callable[[ndarray], ndarray], list[Basic]]: residual function and its arguments
+        """
+
         subbed_system = self.get_subbed(subs)
 
         lambda_residual_list: list[tuple[Callable[[ndarray], usernum | ndarray], list[Basic]]] = [
@@ -515,7 +696,25 @@ class System:
 
         return concatenate_wrapper(func_list), arg_list, return_len
 
-    def solve(self, subs: dict[Basic, usernum], guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn = None)-> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum], guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn: usernum | None = None)-> dict[Basic, npfloat]:
+        """solve returns one solution after applying a substitution, utilizing a guess, and passing optional arguments to scipy's fsolve
+
+        Args:
+            subs (dict[Basic, usernum]): subtitution dictionary
+            guess_dict (dict[Basic, usernum], optional): guess dictionary, the values of which are passed to fsolve. Defaults to {}.
+            verbosity (int, optional): amount of information regarding the solution printed to console according to `{0: 'None', 1: 'Result and message', 2: 'All'}`. Defaults to 1.
+            maxfev (int, optional): The maximum number of calls to the function. If zero, then `100*(N+1)` is the maximum where `N` is the number of elements in `guess`. Defaults to 0.
+            xtol (usernum, optional): The calculation will terminate if the relative error between two consecutive iterates is at most xtol. Defaults to 1.49012e-8.
+            epsfcn (usernum | None, optional): A suitable step length for the forward-difference approximation of the Jacobian (for `fprime=None`). If epsfcn is less than the machine precision, it is assumed that the relative errors in the functions are of the order of the machine precision. Defaults to None.
+
+        Raises:
+            ValueError: Insufficient substitutions to possibly solve
+            Exception: fsolve exception
+
+        Returns:
+            dict[Basic, npfloat]: solution dictionary
+        """
+        
         lambda_residual, residual_variables, return_len = self.get_lambda_residual(subs)
     
         exception_output = f"\
@@ -524,7 +723,7 @@ class System:
                 residual_variables:\n    {residual_variables.__str__().replace('\n', '\n    ')}"
 
         if len(residual_variables) > self.size:
-            raise ValueError(f"Insufficient subs to solve matrix equation\n{exception_output}")
+            raise ValueError(f"Insufficient subs to solve System\n{exception_output}")
         
         guess_list = [guess_dict[variable] if variable in guess_dict.keys() else 1 for variable in residual_variables]
         guess_vect = nparr(guess_list + [1] * (return_len - len(guess_list)))

@@ -22,8 +22,7 @@ pip install meenpy
 
 ```python
 from meenpy.numerics import ScalarEquation, MatrixEquation, TabularEquation, System
-import pandas as pd
-import sympy as sym
+import sympy as sym, pandas as pd
 
 ## Variable Definitions
 T, x, p, v = sym.symbols("T, x, p, v")
