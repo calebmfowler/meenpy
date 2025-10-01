@@ -1,13 +1,99 @@
 from scipy.optimize import fsolve
 from sympy import sympify, lambdify, Basic, Expr, Matrix, Identity
-from numpy import array as nparr, ndarray, float64 as npfloat, concatenate, prod, sum, argmin, shape, vectorize, abs, max, reciprocal
+from numpy import array as nparr, ndarray, float64 as npfloat, linspace, concatenate, prod, sum, argmin, shape, vectorize, apply_along_axis, abs, min, max, reciprocal, meshgrid
 from numpy.linalg import norm
 from typing import Callable, get_type_hints, cast
 from pandas import Series, DataFrame, concat
 
+import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
+pio.renderers.default = "browser"
+
 usernum = int | float | npfloat
 
-class Equation:
+# Provide critical utilities (sympy.symbols, sympy.Matrix) here with aliases
+
+class Solvable:
+    def get_lambda_residual(self, subs: dict = {}) -> tuple:
+        return tuple()
+    
+    def visualize_lambda_residual(self, domain_definition: dict[Basic | str, tuple[usernum, usernum, int]], subs: dict[Basic | str, usernum] = {}, html_path: str = "", show: bool = False) -> None:
+        lambda_residual, residual_variables, *_ = self.get_lambda_residual(subs)
+
+        domain_variables = domain_definition.keys()
+
+        if any([variable not in domain_variables for variable in residual_variables]):
+            raise ValueError(f"Insufficient substitutions to be visualize AlgebraicEquation by variation in\n{len(domain_variables)} provided domain variables: {domain_variables}\nwith provided subs: {subs}\nleaving {len(residual_variables)} residual_variables: {residual_variables}")
+
+        if len(domain_variables) != len(residual_variables):
+            raise ValueError(f"Mismatch between\n{len(domain_variables)} provided domain variables: {domain_variables}\nwith provided subs: {subs}\nleaving {len(residual_variables)} residual_variables: {residual_variables}")
+
+        if len(domain_variables) == 1:
+            residual_variable = residual_variables.pop()
+            domain = linspace(*domain_definition[residual_variable])
+            residual_magnitudes = vectorize(lambda state: norm(lambda_residual(nparr([state]))))(domain)
+
+            df = DataFrame({residual_variable.__str__(): domain, "residual magnitude": residual_magnitudes})
+            fig = px.line(df, template="plotly_dark")
+
+        elif len(domain_variables) == 2:
+            subdomains = [linspace(*subdomain_definition) for subdomain_definition in domain_definition.values()]
+            base_value_frames = meshgrid(*subdomains[:2])
+            residual_variable_index_mapping = {
+                residual_variables.index(domain_variable): domain_variable_index
+                for domain_variable_index, domain_variable in enumerate(domain_definition.keys())
+            }
+            residual_magnitudes = vectorize(lambda *base_values: norm(lambda_residual(nparr([
+                base_values[residual_variable_index_mapping[i]]
+                for i in range(len(residual_variables))
+            ]))))(*base_value_frames)
+            fig = px.imshow(residual_magnitudes, x=subdomains[0], y=subdomains[1], origin='lower', labels={'x': residual_variables[0].__str__(), 'y': residual_variables[1].__str__(), 'color': 'residual magnitude'}, color_continuous_scale='Viridis', template='plotly_dark')
+
+        else:
+            subdomains = [linspace(*subdomain_definition) for subdomain_definition in domain_definition.values()]
+            base_value_frames = meshgrid(*subdomains[:2])
+            residual_variable_index_mapping = {
+                residual_variables.index(domain_variable): domain_variable_index
+                for domain_variable_index, domain_variable in enumerate(domain_definition.keys())
+            }
+
+            get_residual_magnitudes = lambda *slider_values: vectorize(lambda *base_values: norm(lambda_residual(nparr([
+                base_values[residual_variable_index_mapping[i]] if residual_variable_index_mapping[i] in [0, 1] else
+                slider_values[residual_variable_index_mapping[i] - 2]
+                for i in range(len(residual_variables))
+            ]))))(*base_value_frames)
+
+            slider_value_permutations = nparr([slider_value_frame.ravel() for slider_value_frame in meshgrid(*subdomains[2:])]).transpose()
+            precomputed_residual_magnitudes = {tuple(slider_values): get_residual_magnitudes(*slider_values) for slider_values in slider_value_permutations}
+            precomputed_minimum_magnitudes = [residual_magnitudes.min() for residual_magnitudes in precomputed_residual_magnitudes.values()]
+            i_min = argmin(precomputed_minimum_magnitudes)
+            z_min = precomputed_minimum_magnitudes[i_min]
+            z_max = max([residual_magnitudes.max() for residual_magnitudes in precomputed_residual_magnitudes.values()])
+
+            initial_residual_magnitudes = precomputed_residual_magnitudes[tuple(slider_value_permutations[0])]
+            fig = go.Figure(data=[go.Heatmap(z=initial_residual_magnitudes, x=subdomains[0], y=subdomains[1], colorscale="Viridis", zmin=float(z_min), zmax=float(z_max))])
+
+            domain_variable_strings = [domain_variable.__str__() for domain_variable in domain_definition.keys()]
+            slider_permutation_title = ", ".join(domain_variable_strings[2:]) + " = "
+            steps = [{"method": "restyle", "label": ", ".join([f"{value:.{2}e}" for value in slider_values]), "args": [{"z": [precomputed_residual_magnitudes[tuple(slider_values)]]}, [0]]} for slider_values in slider_value_permutations]
+            sliders = [{"active": 0, "y": -0.1, "x": 0.1, "len": 1, "currentvalue": {"prefix": slider_permutation_title}, "steps": steps}]
+
+            fig.update_layout(title=f"Residual magnitude minimized to {z_min} at {slider_permutation_title} = {slider_value_permutations[i_min]}", sliders=sliders, xaxis_title=domain_variable_strings[0], yaxis_title=domain_variable_strings[1])
+
+        if show:
+            fig.show()
+        else:
+            if html_path != "" and html_path[-5:] != ".html":
+                html_path = html_path + ".html"
+            
+            fig.write_html(html_path, auto_open=False)
+    
+    def solve(self, subs: dict = {}) -> dict:
+        return {}
+
+
+class Equation(Solvable):
     """Equation provides the structure for user facing equation classes and should not be used directly
     """
 
@@ -62,7 +148,7 @@ class AlgebraicEquation(Equation):
     
     def get_lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable, list[Basic]]:
         return (lambda *args, **kwargs: None, [])
-    
+
     def solve(self, subs: dict[Basic, usernum] = {}) -> dict[Basic, npfloat]:
         return {}
 
@@ -206,7 +292,7 @@ class ScalarEquation(AlgebraicEquation):
         return {residual_variables[0] : npfloat(solution[0])}
 
 
-class MatrixEquation(AlgebraicEquation):
+class MatrixEquation(AlgebraicEquation): # Update to take in lists for lhs, rhs and call Matrix() constructor at __init__
     """MatrixEquation enables articulation and solution of matrix (including vector) valued equations
 
     Args:
@@ -404,7 +490,7 @@ class TabularEquation(Equation):
 
         self.residual_type = residual_type
         self.residual_scaling: ndarray = reciprocal(max(abs(nparr(
-            [vectorize(lambda I: I[i])(self.index.values) for i in range(self.index.nlevels)] + [series.values for col, series in self.df.items()]
+            [vectorize(lambda I: I[i])(self.index.values) for i in range(self.index.nlevels)] + [series.values for col, series in self.df.items()] # Can't you just cast I to a list?
         )), axis=1))
 
     def _how_is_index_adjacent(self, I: tuple, J: tuple) -> tuple[int, bool]:
@@ -627,7 +713,7 @@ class TabularEquation(Equation):
         return self.df.__str__()
 
 
-class System:
+class System(Solvable):
     """System enables the composition of Equation objects into a system solution of that system
     """
 
@@ -659,7 +745,7 @@ class System:
 
         return System(subbed_eqn_list, self.column_map)
 
-    def get_lambda_residual(self, subs: dict[Basic, usernum]) -> tuple[Callable[[ndarray], ndarray], list[Basic], int]:
+    def get_lambda_residual(self, subs: dict[Basic, usernum] = {}) -> tuple[Callable[[ndarray], ndarray], list[Basic], int]:
         """get_lambda_residual returns a residual function and list of function arguments after apply a substitution
 
         Args:
@@ -696,7 +782,7 @@ class System:
 
         return concatenate_wrapper(func_list), arg_list, return_len
 
-    def solve(self, subs: dict[Basic, usernum], guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn: usernum | None = None)-> dict[Basic, npfloat]:
+    def solve(self, subs: dict[Basic, usernum] = {}, guess_dict: dict[Basic, usernum] = {}, verbosity: int = 1, maxfev: int = 0, xtol: usernum = 1.49012e-8, epsfcn: usernum | None = None)-> dict[Basic, npfloat]:
         """solve returns one solution after applying a substitution, utilizing a guess, and passing optional arguments to scipy's fsolve
 
         Args:

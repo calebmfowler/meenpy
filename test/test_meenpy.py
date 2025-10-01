@@ -82,7 +82,7 @@ class MEENPyTest(unittest.TestCase):
         pass
 
     def test_tabular_equation(self):
-        water_table = teqn(read_csv("test/water.csv"), ["Temperature", "Quality"])
+        water_table = teqn(read_csv("test/assets/water.csv"), ["Temperature", "Quality"])
         sol = water_table.solve({"Specific Volume": 0.7505}, verbosity=0, xtol=1e-25)
         result = [round(sol[variable], 6) for variable in ["Temperature", "Quality", "Pressure", "Specific Volume"]]
         expected = [npfloat(100), npfloat(0.5), npfloat(1), npfloat(0.7505)]
@@ -93,7 +93,7 @@ class MEENPyTest(unittest.TestCase):
     def test_scalar_tabular_system(self):
         T, x, p, v = symb("T, x, p, v")
         column_map = {T: "Temperature", x: "Quality", p: "Pressure", v: "Specific Volume"}
-        water = teqn(read_csv("test/water.csv"), ["Temperature", "Quality"], residual_type="all_column_differential")
+        water = teqn(read_csv("test/assets/water.csv"), ["Temperature", "Quality"], residual_type="all_column_differential")
         
         T_amb, h, Qd = symb("T_amb, h, Qd")
         convection = seqn(Qd, h * (T - T_amb))
@@ -105,6 +105,42 @@ class MEENPyTest(unittest.TestCase):
         self.assertEqual(result, expected)
 
     pass
+
+    def test_scalar_visualization(self):
+        y, m, x, b = symb("y, m, x, b")
+        line = seqn(y, m * x + b)
+
+        line.visualize_lambda_residual({y: (-1, 1, 3)}, {m: 1, x: 1, b: -1}, html_path="test/plots/test_scalar_visualization_1")
+        line.visualize_lambda_residual({y: (-1, 1, 3), x: (0, 2, 3)}, {m: 1, b: -1}, html_path="test/plots/test_scalar_visualization_2")
+        line.visualize_lambda_residual({y: (-1, 1, 3), x: (0, 2, 3), b: (-2, 0, 3), m: (0, 2, 3)}, html_path="test/plots/test_scalar_visualization_3")
+    
+    def test_matrix_visualization(self):
+        a1, a2, a3, a4, x1, x2, b1, b2 = symb("a1, a2, a3, a4, x1, x2, b1, b2")
+        A = Mat([
+            [a1, a2],
+            [a3, a4]
+        ])
+        X = Mat([x1, x2])
+        B = Mat([b1, b2])
+        line = meqn(A @ X, B)
+
+        line.visualize_lambda_residual({x1: (-1, 1, 10), x2: (-1, 1, 10)}, {a1: 1, a2: -1, a3: 1, a4: 1, b1: 0, b2: 2}, html_path="test/plots/test_matrix_visualization")
+
+    def test_tabular_visualization(self):
+        water_table = teqn(read_csv("test/assets/water.csv"), ["Temperature", "Quality"])
+        water_table.visualize_lambda_residual({"Temperature": (0, 200, 21), "Quality": (-0.5, 1.5, 21), "Pressure": (1, 1, 1), "Specific Volume": (0.7505, 0.7505, 1)}, {"Specific Volume": 0.7505}, html_path="test/plots/test_tabular_visualization")
+
+    def test_scalar_tabular_system_visualization(self):
+        T, x, p, v = symb("T, x, p, v")
+        column_map = {T: "Temperature", x: "Quality", p: "Pressure", v: "Specific Volume"}
+        water = teqn(read_csv("test/assets/water.csv"), ["Temperature", "Quality"], residual_type="all_column_differential")
+        
+        T_amb, h, Qd = symb("T_amb, h, Qd")
+        convection = seqn(Qd, h * (T - T_amb))
+
+        water_system = sys([water, convection], column_map)
+        water_system.visualize_lambda_residual({x: (-0.5, 1.5, 21), T: (0, 200, 21), p: (1, 1, 1), v: (0.7505, 0.7505, 1), Qd: (50, 100, 3)}, {T_amb: 25, h: 1, v: 0.7505}, html_path="test/plots/test_scalar_tabular_system_visualization")
+
 
 if __name__ == "__main__":
     unittest.main()

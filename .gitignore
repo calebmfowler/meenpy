@@ -8,6 +8,7 @@ wheels/
 
 # Testing plots
 *.png
+*.html
 
 # Virtual environments
 .venv

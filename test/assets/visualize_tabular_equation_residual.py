@@ -3,7 +3,7 @@ from meenpy.numerics import ScalarEquation as seqn, MatrixEquation as meqn, Syst
 from meenpy.numerics.utils import *
 
 residual_type = "all_column_differential"
-water = teqn(read_csv("test/water.csv"), ["Temperature", "Quality"], residual_type=residual_type)
+water = teqn(read_csv("water.csv"), ["Temperature", "Quality"], residual_type=residual_type)
 func, fargs = water.get_lambda_residual()
 state_space_ranges = {
     "Temperature": (0, 200, 21),
@@ -12,7 +12,7 @@ state_space_ranges = {
 property_ranges = [np.linspace(*state_space_ranges[arg]) for arg in fargs if arg in state_space_ranges.keys()]
 state_space = np.meshgrid(*property_ranges)
 
-residual_magnitudes = np.vectorize(lambda *state: np.linalg.norm(func(np.array([*state] + [0.5, 0.751]))))(*state_space).reshape(state_space[0].shape)
+residual_magnitudes = np.vectorize(lambda *state: np.linalg.norm(func(np.array([*state] + [1, 0.7505]))))(*state_space).reshape(state_space[0].shape)
 
 def plot_residuals(state_space, residuals, fargs, outpath=None):
     fig, ax = plt.subplots()
@@ -23,5 +23,5 @@ def plot_residuals(state_space, residuals, fargs, outpath=None):
         fig.savefig(outpath)
 
 if __name__ == "__main__":
-    plot_residuals(state_space, residual_magnitudes, fargs, outpath=f"test/residuals_table_{residual_type}.png")
+    plot_residuals(state_space, residual_magnitudes, fargs, outpath=f"test/plots/residuals_table_{residual_type}.png")
 
