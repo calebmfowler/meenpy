@@ -1,4 +1,4 @@
-from numpy import abs, argmin, concatenate, linspace, max, ndarray, array as nparray, float64 as npfloat, prod, reciprocal, shape, sum, vectorize, meshgrid
+from numpy import abs, apply_along_axis, argmin, concatenate, linspace, max, meshgrid, newaxis, ndarray, array as nparray, float64 as npfloat, prod, reciprocal, shape, sum, vectorize, where
 from numpy.linalg import norm
 from pandas import concat, DataFrame, Series
 import plotly.express as px
@@ -46,54 +46,60 @@ class Solvable:
         if len(domain_variables) == 1:
             residual_variable = residual_variables.pop()
             domain = linspace(*domain_definition[residual_variable])
-            residual_magnitudes = vectorize(lambda state: norm(lambda_residual(nparray([state]))))(domain)
+            residual_magnitudes = apply_along_axis(lambda state: norm(lambda_residual(state)), 1, domain[:, newaxis])
 
             df = DataFrame({residual_variable.__str__(): domain, "residual magnitude": residual_magnitudes})
             fig = px.line(df, template="plotly_dark")
 
         elif len(domain_variables) == 2:
             subdomains = [linspace(*subdomain_definition) for subdomain_definition in domain_definition.values()]
-            base_value_frames = meshgrid(*subdomains[:2])
-            residual_variable_index_mapping = {
+            value_frames = meshgrid(*subdomains)
+            value_permutations = nparray([frame.ravel() for frame in value_frames]).transpose()
+            variable_index_mapping = {
                 residual_variables.index(domain_variable): domain_variable_index
                 for domain_variable_index, domain_variable in enumerate(domain_definition.keys())
             }
-            residual_magnitudes = vectorize(lambda *base_values: norm(lambda_residual(nparray([
-                base_values[residual_variable_index_mapping[i]]
-                for i in range(len(residual_variables))
-            ]))))(*base_value_frames)
+            variable_indexing = nparray([variable_index_mapping[i] for i in range(len(domain_variables))])
+            residual_magnitudes = apply_along_axis(
+                lambda values: norm(lambda_residual(values[variable_indexing])),
+                1, value_permutations
+            ).reshape(value_frames[0].shape)
+
             fig = px.imshow(residual_magnitudes, x=subdomains[0], y=subdomains[1], origin='lower', labels={'x': residual_variables[0].__str__(), 'y': residual_variables[1].__str__(), 'color': 'residual magnitude'}, color_continuous_scale='Viridis', template='plotly_dark')
 
         else:
             subdomains = [linspace(*subdomain_definition) for subdomain_definition in domain_definition.values()]
-            base_value_frames = meshgrid(*subdomains[:2])
-            residual_variable_index_mapping = {
+            value_frames = meshgrid(*subdomains)
+            value_permutations = nparray([frame.ravel() for frame in value_frames]).transpose()
+            variable_index_mapping = {
                 residual_variables.index(domain_variable): domain_variable_index
                 for domain_variable_index, domain_variable in enumerate(domain_definition.keys())
             }
+            variable_indexing = nparray([variable_index_mapping[i] for i in range(len(domain_variables))])
 
-            get_residual_magnitudes = lambda *slider_values: vectorize(lambda *base_values: norm(lambda_residual(nparray([
-                base_values[residual_variable_index_mapping[i]] if residual_variable_index_mapping[i] in [0, 1] else
-                slider_values[residual_variable_index_mapping[i] - 2]
-                for i in range(len(residual_variables))
-            ]))))(*base_value_frames)
+            residual_magnitudes = apply_along_axis(
+                lambda values: norm(lambda_residual(values[variable_indexing])),
+                1, value_permutations
+            )
+            i_min = argmin(residual_magnitudes)
+            min_residual_magnitude = residual_magnitudes[i_min]
+            min_value_permutation = value_permutations[i_min]
+            max_residual_magnitude = max(residual_magnitudes)
+            x_len, y_len = len(subdomains[0]), len(subdomains[1])
+            z_len = int(len(residual_magnitudes) / (x_len * y_len))
+            shaped_residual_magnitudes = residual_magnitudes.reshape((z_len, y_len, x_len)).transpose()
 
-            slider_value_permutations = nparray([slider_value_frame.ravel() for slider_value_frame in meshgrid(*subdomains[2:])]).transpose()
-            precomputed_residual_magnitudes = {tuple(slider_values): get_residual_magnitudes(*slider_values) for slider_values in slider_value_permutations}
-            precomputed_minimum_magnitudes = [residual_magnitudes.min() for residual_magnitudes in precomputed_residual_magnitudes.values()]
-            i_min = argmin(precomputed_minimum_magnitudes)
-            z_min = precomputed_minimum_magnitudes[i_min]
-            z_max = max([residual_magnitudes.max() for residual_magnitudes in precomputed_residual_magnitudes.values()])
-
-            initial_residual_magnitudes = precomputed_residual_magnitudes[tuple(slider_value_permutations[0])]
-            fig = go.Figure(data=[go.Heatmap(z=initial_residual_magnitudes, x=subdomains[0], y=subdomains[1], colorscale="Viridis", zmin=float(z_min), zmax=float(z_max))])
-
+            fig = go.Figure(data=[go.Heatmap(z=shaped_residual_magnitudes[:, :, 0], x=subdomains[0], y=subdomains[1], colorscale="Viridis", zmin=float(min_residual_magnitude), zmax=float(max_residual_magnitude))])
             domain_variable_strings = [domain_variable.__str__() for domain_variable in domain_definition.keys()]
-            slider_permutation_title = ", ".join(domain_variable_strings[2:]) + " = "
-            steps = [{"method": "restyle", "label": ", ".join([f"{value:.{2}e}" for value in slider_values]), "args": [{"z": [precomputed_residual_magnitudes[tuple(slider_values)]]}, [0]]} for slider_values in slider_value_permutations]
-            sliders = [{"active": 0, "y": -0.1, "x": 0.1, "len": 1, "currentvalue": {"prefix": slider_permutation_title}, "steps": steps}]
 
-            fig.update_layout(title=f"Residual magnitude minimized to {z_min} at {slider_permutation_title} = {slider_value_permutations[i_min]}", sliders=sliders, xaxis_title=domain_variable_strings[0], yaxis_title=domain_variable_strings[1])
+            steps = [{
+                "method": "restyle",
+                "label": ", ".join([f"{value:.{2}e}" for value in value_permutations[i_z, 2:]]),
+                "args": [{"z": [shaped_residual_magnitudes[:, :, i_z]]}, [0]]
+            } for i_z in range(z_len)]
+            sliders = [{"active": 0, "currentvalue": {"prefix": ", ".join(domain_variable_strings[2:]) + " = "}, "steps": steps}]
+
+            fig.update_layout(title=f"Residual magnitude minimized to {min_residual_magnitude} at {", ".join(domain_variable_strings) + " = "} = {min_value_permutation}", sliders=sliders, xaxis_title=domain_variable_strings[0], yaxis_title=domain_variable_strings[1])
 
         if show:
             fig.show()
@@ -610,10 +616,8 @@ class TabularEquation(Equation):
 
             if N in subbed_table.index:
                 if subbed_table.residual_type == "proper_column_differential":
-                    # print(f"@ {N} {col_vals_N}\nwhere {subbed_table.loc[N].values} may be evaluated\nso {concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values]) * subbed_table.residual_scaling} is the residual\nscaled by {subbed_table.residual_scaling}")
                     return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values]) * subbed_table.residual_scaling
                 elif subbed_table.residual_type == "all_column_differential":
-                    # print(f"@ {N} {col_vals_N}\nwhere {subbed_table.loc[N].values} may be evaluated\nso {concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values]) * subbed_table.residual_scaling} is the residual\nscaled by {subbed_table.residual_scaling}")
                     return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - subbed_table.loc[N].values]) * subbed_table.residual_scaling
             
             novel_index_adjacency = [subbed_table._how_is_index_adjacent(I, N) for I in subbed_table.index]
@@ -644,10 +648,8 @@ class TabularEquation(Equation):
 
             if len(interpolated_col_vals) != 0:
                 if subbed_table.residual_type == "proper_column_differential":
-                    # print(f"@ {N} {col_vals_N}\nwhere {interpolated_col_vals[0]} may be interpolated\nso {concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]]) * subbed_table.residual_scaling} is the residual\nscaled by {subbed_table.residual_scaling}")
                     return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]]) * subbed_table.residual_scaling
                 elif subbed_table.residual_type == "all_column_differential":
-                    # print(f"@ {N} {col_vals_N}\nwhere {interpolated_col_vals[0]} may be interpolated\nso {concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]]) * subbed_table.residual_scaling} is the residual\nscaled by {subbed_table.residual_scaling}")
                     return concatenate([[0] * subbed_table.index.nlevels, col_vals_N - interpolated_col_vals[0]]) * subbed_table.residual_scaling
 
             index_seperation = [subbed_table._get_index_seperation(N, I) for I in subbed_table.index]
@@ -662,8 +664,8 @@ class TabularEquation(Equation):
             elif subbed_table.residual_type == "all_column_differential":
                 unscaled_residual[0:subbed_table.index.nlevels] = (nparray(N) - nparray(nearest_index)) * subbed_table.residual_scaling[0:subbed_table.index.nlevels]
 
-            # print(f"@ {N} {col_vals_N}\nwhere the residual {nearest_index_residual} is obtained @ {nearest_index}\nso {unscaled_residual + vectorize(lambda x: -1 if x < 0 else 1)(unscaled_residual) * nearest_index_seperation} is the residual")
-            return unscaled_residual + vectorize(lambda x: -1 if x < 0 else 1)(unscaled_residual) * nearest_index_seperation
+            unscaled_residual_sign_vector = where(unscaled_residual < 0, -1.0, 1.0)
+            return unscaled_residual + unscaled_residual_sign_vector * nearest_index_seperation
 
         return lambda_residual, [str(name) for name in subbed_table.index.names] + subbed_table.columns.to_list()
 

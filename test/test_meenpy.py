@@ -112,7 +112,7 @@ class MEENPyTest(unittest.TestCase):
 
         line.visualize_lambda_residual({y: (-1, 1, 3)}, {m: 1, x: 1, b: -1}, html_path="test/plots/test_scalar_visualization_1")
         line.visualize_lambda_residual({y: (-1, 1, 3), x: (0, 2, 3)}, {m: 1, b: -1}, html_path="test/plots/test_scalar_visualization_2")
-        line.visualize_lambda_residual({y: (-1, 1, 3), x: (0, 2, 3), b: (-2, 0, 3), m: (0, 2, 3)}, html_path="test/plots/test_scalar_visualization_3")
+        line.visualize_lambda_residual({y: (-1, 1, 21), x: (0, 2, 21), b: (-2, 0, 21), m: (0, 2, 21)}, html_path="test/plots/test_scalar_visualization_3")
     
     def test_matrix_visualization(self):
         a1, a2, a3, a4, x1, x2, b1, b2 = symbols("a1, a2, a3, a4, x1, x2, b1, b2")
