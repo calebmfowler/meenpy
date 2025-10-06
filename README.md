@@ -21,8 +21,9 @@ pip install meenpy
 ## Usage
 
 ```python
+import numpy as np, sympy as sym, pandas as pd
 from meenpy.numerics import ScalarEquation, MatrixEquation, TabularEquation, System
-import sympy as sym, pandas as pd
+from meenpy.numerics.utils import *
 
 ## Variable Definitions
 T, x, p, v = sym.symbols("T, x, p, v")

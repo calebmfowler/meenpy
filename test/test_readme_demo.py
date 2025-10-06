@@ -1,7 +1,8 @@
-def test_readme_demp():
-    from meenpy.numerics import ScalarEquation, MatrixEquation, TabularEquation, System
-    import sympy as sym, pandas as pd
+import numpy as np, sympy as sym, pandas as pd
+from meenpy.numerics import ScalarEquation, MatrixEquation, TabularEquation, System
+from meenpy.numerics.utils import *
 
+def test_readme_demo():
     ## Variable Definitions
     T, x, p, v = sym.symbols("T, x, p, v")
     T_amb, h, Qd = sym.symbols("T_amb, h, Qd")

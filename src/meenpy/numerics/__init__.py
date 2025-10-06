@@ -1,24 +1,38 @@
-from scipy.optimize import fsolve
-from sympy import sympify, lambdify, Basic, Expr, Matrix, Identity
-from numpy import array as nparr, ndarray, float64 as npfloat, linspace, concatenate, prod, sum, argmin, shape, vectorize, apply_along_axis, abs, min, max, reciprocal, meshgrid
+from numpy import abs, argmin, concatenate, linspace, max, ndarray, array as nparray, float64 as npfloat, prod, reciprocal, shape, sum, vectorize, meshgrid
 from numpy.linalg import norm
-from typing import Callable, get_type_hints, cast
-from pandas import Series, DataFrame, concat
-
+from pandas import concat, DataFrame, Series
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
-pio.renderers.default = "browser"
+from scipy.optimize import fsolve
+from sympy import Basic, Expr, Identity, lambdify, Matrix, sympify
+from typing import Callable, cast, get_type_hints
 
+
+pio.renderers.default = "browser"
 usernum = int | float | npfloat
 
-# Provide critical utilities (sympy.symbols, sympy.Matrix) here with aliases
 
 class Solvable:
+    """Solvable provides the structure for user facing system and equation classes and should not be used directly
+    """
     def get_lambda_residual(self, subs: dict = {}) -> tuple:
         return tuple()
     
     def visualize_lambda_residual(self, domain_definition: dict[Basic | str, tuple[usernum, usernum, int]], subs: dict[Basic | str, usernum] = {}, html_path: str = "", show: bool = False) -> None:
+        """visualize_lambda_residual provides a visualization of the magnitude of the residual function of a Solvable object across a given domain for the putpose of debugging solver failures
+
+        Args:
+            domain_definition (dict[Basic  |  str, tuple[usernum, usernum, int]]): Dictionary of domain definitions. Basic | str objects must specify a residual variable in the Solvable object. Tuples must specify a start, stop, and number of values included in the subdomain of the variable, being passed to numpy's linspace
+            subs (dict[Basic  |  str, usernum], optional): substitution dictionary. Defaults to {}.
+            html_path (str, optional): Path to save *.html file of visualization. Not saved if show=True. Defaults to "".
+            show (bool, optional): Whether or not to display visualization in your the default browser at runtime. Note that this gives warnings because of plotly. Defaults to False.
+
+        Raises:
+            ValueError: Residual variable exists in Solvable object that is not provided in domain_definition
+            ValueError: Uneccesary or duplicate domain_defintion inclusions leading to more domain variables that residual variables
+        """
+        
         lambda_residual, residual_variables, *_ = self.get_lambda_residual(subs)
 
         domain_variables = domain_definition.keys()
@@ -32,7 +46,7 @@ class Solvable:
         if len(domain_variables) == 1:
             residual_variable = residual_variables.pop()
             domain = linspace(*domain_definition[residual_variable])
-            residual_magnitudes = vectorize(lambda state: norm(lambda_residual(nparr([state]))))(domain)
+            residual_magnitudes = vectorize(lambda state: norm(lambda_residual(nparray([state]))))(domain)
 
             df = DataFrame({residual_variable.__str__(): domain, "residual magnitude": residual_magnitudes})
             fig = px.line(df, template="plotly_dark")
@@ -44,7 +58,7 @@ class Solvable:
                 residual_variables.index(domain_variable): domain_variable_index
                 for domain_variable_index, domain_variable in enumerate(domain_definition.keys())
             }
-            residual_magnitudes = vectorize(lambda *base_values: norm(lambda_residual(nparr([
+            residual_magnitudes = vectorize(lambda *base_values: norm(lambda_residual(nparray([
                 base_values[residual_variable_index_mapping[i]]
                 for i in range(len(residual_variables))
             ]))))(*base_value_frames)
@@ -58,13 +72,13 @@ class Solvable:
                 for domain_variable_index, domain_variable in enumerate(domain_definition.keys())
             }
 
-            get_residual_magnitudes = lambda *slider_values: vectorize(lambda *base_values: norm(lambda_residual(nparr([
+            get_residual_magnitudes = lambda *slider_values: vectorize(lambda *base_values: norm(lambda_residual(nparray([
                 base_values[residual_variable_index_mapping[i]] if residual_variable_index_mapping[i] in [0, 1] else
                 slider_values[residual_variable_index_mapping[i] - 2]
                 for i in range(len(residual_variables))
             ]))))(*base_value_frames)
 
-            slider_value_permutations = nparr([slider_value_frame.ravel() for slider_value_frame in meshgrid(*subdomains[2:])]).transpose()
+            slider_value_permutations = nparray([slider_value_frame.ravel() for slider_value_frame in meshgrid(*subdomains[2:])]).transpose()
             precomputed_residual_magnitudes = {tuple(slider_values): get_residual_magnitudes(*slider_values) for slider_values in slider_value_permutations}
             precomputed_minimum_magnitudes = [residual_magnitudes.min() for residual_magnitudes in precomputed_residual_magnitudes.values()]
             i_min = argmin(precomputed_minimum_magnitudes)
@@ -279,7 +293,7 @@ class ScalarEquation(AlgebraicEquation):
 
             if verbosity > 0:
                 print("fsolve results:")
-                print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
+                print("    " + dict(zip(residual_variables, nparray(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
                 print("    " + msg)
 
             if verbosity > 1:
@@ -292,7 +306,7 @@ class ScalarEquation(AlgebraicEquation):
         return {residual_variables[0] : npfloat(solution[0])}
 
 
-class MatrixEquation(AlgebraicEquation): # Update to take in lists for lhs, rhs and call Matrix() constructor at __init__
+class MatrixEquation(AlgebraicEquation):
     """MatrixEquation enables articulation and solution of matrix (including vector) valued equations
 
     Args:
@@ -300,8 +314,12 @@ class MatrixEquation(AlgebraicEquation): # Update to take in lists for lhs, rhs 
     """
 
     def _init_expression(self, lhs, rhs) -> None:
-        self.lhs: Matrix = sympify(lhs)
-        self.rhs: Matrix = sympify(rhs)
+        if isinstance(lhs, list) and isinstance(rhs, list):
+            self.lhs = Matrix(lhs)
+            self.rhs = Matrix(rhs)
+        else:
+            self.lhs: Matrix = sympify(lhs)
+            self.rhs: Matrix = sympify(rhs)
 
     def _init_shape(self) -> None:
         lhs_shape: tuple[int, int] = self.lhs.shape
@@ -434,7 +452,7 @@ class MatrixEquation(AlgebraicEquation): # Update to take in lists for lhs, rhs 
 
             if verbosity > 0:
                 print("fsolve results:")
-                print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
+                print("    " + dict(zip(residual_variables, nparray(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
                 print("    " + msg)
 
             if verbosity > 1:
@@ -489,7 +507,7 @@ class TabularEquation(Equation):
             raise ValueError(f"Invalid residual_type = '{residual_type}'")
 
         self.residual_type = residual_type
-        self.residual_scaling: ndarray = reciprocal(max(abs(nparr(
+        self.residual_scaling: ndarray = reciprocal(max(abs(nparray(
             [vectorize(lambda I: I[i])(self.index.values) for i in range(self.index.nlevels)] + [series.values for col, series in self.df.items()] # Can't you just cast I to a list?
         )), axis=1))
 
@@ -636,13 +654,13 @@ class TabularEquation(Equation):
             i_nearest_index = argmin(index_seperation)
             nearest_index: tuple = subbed_table.index.values[i_nearest_index]
             nearest_index_seperation: npfloat = index_seperation[i_nearest_index]
-            nearest_index_residual = lambda_residual(nparr(list(nearest_index) + col_vals_N.tolist()))
+            nearest_index_residual = lambda_residual(nparray(list(nearest_index) + col_vals_N.tolist()))
             unscaled_residual = nearest_index_residual
 
             if subbed_table.residual_type == "proper_column_differential":
                 pass
             elif subbed_table.residual_type == "all_column_differential":
-                unscaled_residual[0:subbed_table.index.nlevels] = (nparr(N) - nparr(nearest_index)) * subbed_table.residual_scaling[0:subbed_table.index.nlevels]
+                unscaled_residual[0:subbed_table.index.nlevels] = (nparray(N) - nparray(nearest_index)) * subbed_table.residual_scaling[0:subbed_table.index.nlevels]
 
             # print(f"@ {N} {col_vals_N}\nwhere the residual {nearest_index_residual} is obtained @ {nearest_index}\nso {unscaled_residual + vectorize(lambda x: -1 if x < 0 else 1)(unscaled_residual) * nearest_index_seperation} is the residual")
             return unscaled_residual + vectorize(lambda x: -1 if x < 0 else 1)(unscaled_residual) * nearest_index_seperation
@@ -650,7 +668,7 @@ class TabularEquation(Equation):
         return lambda_residual, [str(name) for name in subbed_table.index.names] + subbed_table.columns.to_list()
 
     def _get_index_seperation(self, N: tuple, I: tuple) -> npfloat:
-        return npfloat(norm((nparr(N) - nparr(I)) * self.residual_scaling[0:self.index.nlevels]))
+        return npfloat(norm((nparray(N) - nparray(I)) * self.residual_scaling[0:self.index.nlevels]))
 
     def _get_interpolated_col_vals(self, adj_index: int, A: tuple, N: tuple, B: tuple) -> ndarray:
         adj_index_val_A, adj_index_val_N, adj_index_val_B = A[adj_index], N[adj_index], B[adj_index]
@@ -689,12 +707,12 @@ class TabularEquation(Equation):
             raise ValueError(f"Insufficient subs to solve TabularEquation\n{exception_output}")
         
         try:
-            guess_vect = nparr([guess_dict[variable] if variable in guess_dict.keys() else 1 for variable in residual_variables])
+            guess_vect = nparray([guess_dict[variable] if variable in guess_dict.keys() else 1 for variable in residual_variables])
             solution, infodict, ier, msg = fsolve(lambda_residual, guess_vect, full_output=True, maxfev=maxfev, xtol=xtol, epsfcn=epsfcn)
 
             if verbosity > 0:
                 print("fsolve results:")
-                print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
+                print("    " + dict(zip(residual_variables, nparray(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
                 print("    " + msg)
 
             if verbosity > 1:
@@ -704,7 +722,7 @@ class TabularEquation(Equation):
         except Exception as e:
             raise Exception(f"Unable to solve TabularEquation\n{exception_output}\n{e}")
 
-        return dict(zip(residual_variables, nparr(solution, dtype=npfloat)))  
+        return dict(zip(residual_variables, nparray(solution, dtype=npfloat)))  
 
     def __getitem__(self, *args, **kwargs):
         return self.df.__getitem__(*args, **kwargs)
@@ -769,14 +787,14 @@ class System(Solvable):
         farg_indices_list = [[arg_index_map[arg] for arg in farg] for farg in farg_list]
 
         return_len: int = sum([
-            shape(func(nparr([1] * len(farg_indices_list))))[0] if get_type_hints(func).get('return') == ndarray\
+            shape(func(nparray([1] * len(farg_indices_list))))[0] if get_type_hints(func).get('return') == ndarray\
             else 1 for func, farg_indices_list in zip(func_list, farg_indices_list)
         ])
 
         def concatenate_wrapper(func_list: list[Callable[[ndarray], usernum | ndarray]]) -> Callable[[ndarray], ndarray]:
             return lambda args: concatenate([
                 func(args[farg_indices_list]) if get_type_hints(func).get('return') == ndarray\
-                else nparr([func(args[farg_indices_list])]).ravel()\
+                else nparray([func(args[farg_indices_list])]).ravel()\
                 for func, farg_indices_list in zip(func_list, farg_indices_list)
             ])
 
@@ -812,14 +830,14 @@ class System(Solvable):
             raise ValueError(f"Insufficient subs to solve System\n{exception_output}")
         
         guess_list = [guess_dict[variable] if variable in guess_dict.keys() else 1 for variable in residual_variables]
-        guess_vect = nparr(guess_list + [1] * (return_len - len(guess_list)))
+        guess_vect = nparray(guess_list + [1] * (return_len - len(guess_list)))
 
         try:
             solution, infodict, ier, msg = fsolve(lambda_residual, guess_vect, full_output=True, maxfev=maxfev, xtol=xtol, epsfcn=epsfcn)
 
             if verbosity > 0:
                 print("fsolve results:")
-                print("    " + dict(zip(residual_variables, nparr(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
+                print("    " + dict(zip(residual_variables, nparray(solution, dtype=npfloat))).__str__().replace("\n", "    \n"))
                 print("    " + msg)
 
             if verbosity > 1:
@@ -829,7 +847,7 @@ class System(Solvable):
         except Exception as e:
             raise Exception(f"Unable to solve System\n{exception_output}\n{e}")
 
-        return dict(zip(residual_variables, nparr(solution, dtype=npfloat)))        
+        return dict(zip(residual_variables, nparray(solution, dtype=npfloat)))        
 
     def __str__(self) -> str:
         return "| " + "\n| ".join([eqn.__str__().replace('\n', '\n| ') for eqn in self.eqn_list])

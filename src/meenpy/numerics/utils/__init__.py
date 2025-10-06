@@ -1,5 +1,12 @@
-import numpy as np, sympy as sym, scipy as sci, matplotlib.pyplot as plt
-from sympy import symbols as symb
-from sympy import Matrix as Mat
-from numpy import float64 as npfloat, array as nparr
+from numpy import array as nparray, float64 as npfloat
 from pandas import read_csv
+from sympy import Matrix, symbols
+
+def variables(names: str, variable_class: type | None = None, **kwargs):
+    if variable_class != None:
+        return symbols(names, cls=variable_class, **kwargs)
+    else:
+        return symbols(names, **kwargs)
+
+def matrix(*args, **kwargs) -> Matrix:
+    return Matrix(*args, **kwargs)
